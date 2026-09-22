@@ -1,6 +1,8 @@
 # LD2450 distance reader
 
-This PlatformIO project reads the first tracked target from an LD2450 connected to a Wemos D1 mini and prints its distance in meters.
+This PlatformIO project reads the tracked targets from an LD2450 connected to a Wemos D1 mini and displays it on a self-hosted website.
+It can track up to 3 people displayed as dots of different colors.
+Built for a Wemos D1 Mini
 
 ## Wiring
 
