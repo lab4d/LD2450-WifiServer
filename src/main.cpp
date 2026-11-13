@@ -1,15 +1,20 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <DNSServer.h>
 #include <EEPROM.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
+#include <SoftwareSerial.h>
 #include <WiFiManager.h>
 #include <WiFiUdp.h>
 
 namespace {
 constexpr uint32_t SensorBaud = 256000;
 constexpr size_t SensorRxBufferSize = 1024;
+// The hardware UART is swapped to the sensor, so logs are bit-banged out of the USB TX pin.
+constexpr uint32_t LogBaud = 115200;
+constexpr int8_t LogTxPin = 1;
 constexpr uint8_t FrameHeader[] = {0xAA, 0xFF, 0x03, 0x00};
 constexpr uint8_t FrameTail[] = {0x55, 0xCC};
 constexpr size_t FrameSize = 30;
@@ -47,7 +52,12 @@ Target targets[MaxTargets] = {};
 uint8_t targetCount = 0;
 uint32_t lastTargetTime = 0;
 ESP8266WebServer webServer(80);
+// In access point mode every DNS name resolves to the device, so phones open it as a captive portal.
+DNSServer dnsServer;
+constexpr uint16_t DnsPort = 53;
+bool accessPointMode = false;
 WiFiManager wifiManager;
+SoftwareSerial logSerial;
 
 struct Color {
   uint8_t r;
@@ -641,6 +651,8 @@ void handleWledConfigPost() {
 
   wledConfig = next;
   saveWledConfig();
+  logSerial.printf("WLED config saved: enabled=%d ip=%s leds=%u\n",wledConfig.enabled,
+                   IPAddress(wledConfig.ip).toString().c_str(), wledConfig.ledCount);
   applyWledConfig(previous);
   handleWledConfigGet();
 }
@@ -678,6 +690,7 @@ void handleWledScan() {
       }
     }
     MDNS.removeQuery();
+    logSerial.printf("WLED scan: %u answers, %u devices\n",answers, devices.size());
   }
   sendJson(200, document);
 }
@@ -709,11 +722,32 @@ void startWebServer() {
   webServer.on("/wled/scan", handleWledScan);
   webServer.on("/wled/preview", handleWledPreview);
   webServer.on("/setup", []() {
+    logSerial.println("Starting Wi-Fi setup portal LD2450-Setup at http://192.168.4.1");
     webServer.stop();
+    dnsServer.stop();
     wifiManager.startConfigPortal("LD2450-Setup");
     ESP.restart();
   });
+  // Captive portal probes (Android /generate_204 and similar) land here and get sent to the page.
+  webServer.onNotFound([]() {
+    if (!accessPointMode) {
+      webServer.send(404, "text/plain", "Not found");
+      return;
+    }
+    webServer.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/", true);
+    webServer.send(302, "text/plain", "");
+  });
+  // Logs every request except the pages' frequent polling.
+  webServer.addHook([](const String &method, const String &url, WiFiClient *client,
+                       ESP8266WebServer::ContentTypeFunction) {
+    if (url != "/data" && url != "/wled/preview") {
+      logSerial.printf("HTTP %s %s from %s\n", method.c_str(), url.c_str(),
+                       client->remoteIP().toString().c_str());
+    }
+    return ESP8266WebServer::CLIENT_REQUEST_CAN_CONTINUE;
+  });
   webServer.begin();
+  logSerial.println("Web server started");
 }
 }  // namespace
 
@@ -721,7 +755,13 @@ void setup() {
   Serial.setRxBufferSize(SensorRxBufferSize);
   Serial.begin(SensorBaud);
   Serial.swap();
+  logSerial.begin(LogBaud, SWSERIAL_8N1, -1, LogTxPin);
+  // Wi-Fi interrupts otherwise break the bit timing and garble the log.
+  logSerial.enableIntTx(false);
+  logSerial.printf("\nLD2450 boot, reset reason: %s\n",ESP.getResetReason().c_str());
   loadWledConfig();
+  // Modem sleep makes the device miss ARP requests, so new clients such as phones cannot reach it.
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);
   wifiManager.setEnableConfigPortal(false);
   wifiManager.setConnectTimeout(5);
   wifiManager.setWiFiAutoReconnect(true);
@@ -729,8 +769,14 @@ void setup() {
     WiFi.disconnect(true);
     WiFi.mode(WIFI_AP);
     WiFi.softAP("LD2450-Visualizer");
+    dnsServer.start(DnsPort, "*", WiFi.softAPIP());
+    accessPointMode = true;
+    logSerial.printf("No saved Wi-Fi, access point LD2450-Visualizer at http://%s\n",
+                     WiFi.softAPIP().toString().c_str());
   }
   if (WiFi.status() == WL_CONNECTED) {
+    logSerial.printf("Connected to %s, http://%s or http://ld2450.local\n", WiFi.SSID().c_str(),
+                     WiFi.localIP().toString().c_str());
     MDNS.begin("ld2450");
     String name;
     uint16_t ledCount = 0;
@@ -740,12 +786,19 @@ void setup() {
       wledConfig.ledCount = ledCount;
       saveWledConfig();
     }
+    if (wledConfig.enabled) {
+      logSerial.printf("WLED %s, %u LEDs\n", IPAddress(wledConfig.ip).toString().c_str(),
+                       wledConfig.ledCount);
+    }
   }
   startWebServer();
 }
 
 void loop() {
   readSensorFrames();
+  if (accessPointMode) {
+    dnsServer.processNextRequest();
+  }
   webServer.handleClient();
   MDNS.update();
   serviceWled();

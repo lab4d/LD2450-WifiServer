@@ -4,7 +4,10 @@
 
 This PlatformIO project reads the tracked targets from an LD2450 connected to a Wemos D1 mini and displays it on a self-hosted website.
 It can track up to 3 people in two axis and up to ~7m away.
-WLED Compatible - The sensor device can send data to a separate WLED device in the network and have the LEDs follow the person in one dimension. Conceived for a dynamic corridor lights that follow the people walking.
+WLED Compatible - The sensor device can send data to a separate WLED device in the network and have the LEDs follow the person in one dimension. Conceived for a dynamic corridor light that follows the people as they walk.
+
+![Visualizer page](docs/visualizer.png)
+
 
 ## Wiring
 
@@ -27,11 +30,15 @@ The LD2450 UART is 3.3 V logic. Power the sensor according to the specific board
 
 ## Visualizer Wi-Fi
 
-On startup, the device first tries saved home Wi-Fi credentials without opening a setup portal. If it cannot connect, it creates an access point named `LD2450-Visualizer`; connect to it and open `http://192.168.4.1`. The visualizer page includes a `Wi-Fi setup` link that opens the WiFiManager configuration portal when needed.
+On startup, the device first tries saved home Wi-Fi credentials without opening a setup portal. If it cannot connect, it creates an access point named `LD2450-Visualizer`; connect to it and the phone should offer to sign in to the network, which opens the visualizer. Otherwise open `http://192.168.4.1`. The visualizer page includes a `Wi-Fi setup` link that opens the WiFiManager configuration portal when needed.
 
 When connected to home Wi-Fi, use `http://ld2450.local` or the device IP address shown by your router.
 
+If Chrome on Android cannot open the page (for example `ERR_TOO_MANY_RETRIES`) while other browsers can, allow Chrome's `Nearby devices` permission in Android Settings > Apps > Chrome > Permissions. Recent Android versions block local network access without it.
+
 ## WLED control
+
+![Visualizer page](docs/wled-control.png)
 
 The `WLED Control` page (`http://ld2450.local/wled`) lets the sensor drive an LED strip on a separate WLED device running stock firmware, so a lit section of the strip follows people along a corridor.
 
