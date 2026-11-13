@@ -1,8 +1,10 @@
 # LD2450 distance reader
 
+** This is an incomplete work in progress **
+
 This PlatformIO project reads the tracked targets from an LD2450 connected to a Wemos D1 mini and displays it on a self-hosted website.
-It can track up to 3 people displayed as dots of different colors.
-Built for a Wemos D1 Mini
+It can track up to 3 people in two axis and up to ~7m away.
+WLED Compatible - The sensor device can send data to a separate WLED device in the network and have the LEDs follow the person in one dimension. Conceived for a dynamic corridor lights that follow the people walking.
 
 ## Wiring
 
@@ -25,9 +27,21 @@ The LD2450 UART is 3.3 V logic. Power the sensor according to the specific board
 
 ## Visualizer Wi-Fi
 
-On startup, the device first tries saved home Wi-Fi credentials without opening a setup portal. If it cannot connect, it creates one access point named `LD2450-Visualizer`; connect to it and open `http://192.168.4.1`. The visualizer page includes a `Wi-Fi setup` link that opens the WiFiManager configuration portal when needed.
+On startup, the device first tries saved home Wi-Fi credentials without opening a setup portal. If it cannot connect, it creates an access point named `LD2450-Visualizer`; connect to it and open `http://192.168.4.1`. The visualizer page includes a `Wi-Fi setup` link that opens the WiFiManager configuration portal when needed.
 
 When connected to home Wi-Fi, use `http://ld2450.local` or the device IP address shown by your router.
+
+## WLED control
+
+The `WLED Control` page (`http://ld2450.local/wled`) lets the sensor drive an LED strip on a separate WLED device running stock firmware, so a lit section of the strip follows people along a corridor.
+
+- **Device:** press `Scan` to find WLED devices on the network (mDNS `_wled._tcp`), or enter an IP address and press `Check`. The LED count is read from the device's `/json/info`, so all strip settings are percentages.
+- **Single User** (on by default): follow only the nearest person. When off, each of the three tracked people gets their own window and color.
+- **Keep control when nobody is present** (off by default): when off, WLED returns to its own preset as soon as nobody is present. When on, the strip stays dark until someone appears. In both cases the sensor stops sending packets while nobody is present.
+- **Mapping:** the corridor start/end distances from the sensor are mapped onto the strip start/end percentages. `Reverse direction` flips which end of the strip is nearest the sensor.
+- **Light:** lit width, edge softness, brightness, smoothing, hold time after someone is lost, a color per person, and an optional background color for the rest of the strip while someone is present.
+
+Frames are sent with WLED's realtime UDP protocol (DNRGB, port 21324) at up to 30 per second, and only when the picture changes. In WLED, `Receive UDP realtime` must be enabled under `Config > Sync Interfaces` (it is by default). Settings are stored in flash and survive a restart.
 
 Output looks like:
 
