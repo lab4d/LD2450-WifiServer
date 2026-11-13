@@ -56,8 +56,13 @@ ESP8266WebServer webServer(80);
 DNSServer dnsServer;
 constexpr uint16_t DnsPort = 53;
 bool accessPointMode = false;
-WiFiManager wifiManager;
 SoftwareSerial logSerial;
+// Serial is swapped to the sensor, so WiFiManager's debug output goes to the USB log instead.
+WiFiManager wifiManager(logSerial);
+// The Wi-Fi setup pages are served on the current network in place of the visualizer.
+bool wifiSetupRequested = false;
+bool wifiSetupActive = false;
+bool wifiSetupSaved = false;
 
 struct Color {
   uint8_t r;
@@ -721,12 +726,13 @@ void startWebServer() {
   webServer.on("/wled/info", handleWledInfo);
   webServer.on("/wled/scan", handleWledScan);
   webServer.on("/wled/preview", handleWledPreview);
+  // The page reloads once the setup pages have taken over port 80.
   webServer.on("/setup", []() {
-    logSerial.println("Starting Wi-Fi setup portal LD2450-Setup at http://192.168.4.1");
-    webServer.stop();
-    dnsServer.stop();
-    wifiManager.startConfigPortal("LD2450-Setup");
-    ESP.restart();
+    webServer.send(200, "text/html",
+                   "<!doctype html><meta http-equiv=\"refresh\" content=\"2;url=/\">"
+                   "<body style=\"background:#050607;color:#e9eef0;font:15px system-ui,sans-serif\">"
+                   "Opening Wi-Fi setup...");
+    wifiSetupRequested = true;
   });
   // Captive portal probes (Android /generate_204 and similar) land here and get sent to the page.
   webServer.onNotFound([]() {
@@ -749,6 +755,25 @@ void startWebServer() {
   webServer.begin();
   logSerial.println("Web server started");
 }
+
+void startWifiSetup() {
+  wifiSetupRequested = false;
+  webServer.stop();
+  wifiManager.startWebPortal();
+  wifiSetupActive = true;
+  const IPAddress address = accessPointMode ? WiFi.softAPIP() : WiFi.localIP();
+  logSerial.printf("Wi-Fi setup at http://%s\n", address.toString().c_str());
+}
+
+// Restarts after credentials are saved, whether or not they connected, or when setup is exited.
+// A failed connection falls back to the access point on the next boot.
+void serviceWifiSetup() {
+  wifiManager.process();
+  if (wifiSetupSaved || !wifiManager.getWebPortalActive()) {
+    logSerial.println("Wi-Fi setup finished, restarting");
+    ESP.restart();
+  }
+}
 }  // namespace
 
 void setup() {
@@ -765,6 +790,8 @@ void setup() {
   wifiManager.setEnableConfigPortal(false);
   wifiManager.setConnectTimeout(5);
   wifiManager.setWiFiAutoReconnect(true);
+  wifiManager.setBreakAfterConfig(true);
+  wifiManager.setSaveConfigCallback([]() { wifiSetupSaved = true; });
   if (!wifiManager.autoConnect()) {
     WiFi.disconnect(true);
     WiFi.mode(WIFI_AP);
@@ -799,7 +826,14 @@ void loop() {
   if (accessPointMode) {
     dnsServer.processNextRequest();
   }
-  webServer.handleClient();
+  if (wifiSetupRequested) {
+    startWifiSetup();
+  }
+  if (wifiSetupActive) {
+    serviceWifiSetup();
+  } else {
+    webServer.handleClient();
+  }
   MDNS.update();
   serviceWled();
 }

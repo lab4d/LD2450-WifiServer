@@ -2,9 +2,14 @@
 
 ** This is an incomplete work in progress **
 
-This PlatformIO project reads the tracked targets from an LD2450 connected to a Wemos D1 mini and displays it on a self-hosted website.
-It can track up to 3 people in two axis and up to ~7m away.
-WLED Compatible - The sensor device can send data to a separate WLED device in the network and have the LEDs follow the person in one dimension. Conceived for a dynamic corridor light that follows the people as they walk.
+- This is built for an ESP8266 device like the Wemos D1 Mini, and a LD2450 Microwave presence sensor.
+- The firmware reads the tracked targets from an LD2450 connected to the ESP and converts the data to user-friendly values.
+- The device also serves a website with a visualization of the sensor and position of tracked people.
+- It can track up to 3 people in two axis and up to ~7m away.
+- An optional integration with a WLED Devices allows controling a LED strip of a separate WLED device over wifi.
+- Conceived for a dynamic corridor light that follows the people as they walk.
+
+- next update MQTT integration for compatibility with Home Assistant. 
 
 ![Visualizer page](docs/visualizer.png)
 
@@ -25,20 +30,22 @@ The LD2450 UART is 3.3 V logic. Power the sensor according to the specific board
 ## Build and monitor
 
 1. Open this folder in VS Code with PlatformIO installed.
-2. Build and upload the `d1_mini` environment.
+2. Build and upload the `d1_mini` environment. (or change to your board)
 3. Open the serial monitor at `115200` baud.
 
-## Visualizer Wi-Fi
 
-On startup, the device first tries saved home Wi-Fi credentials without opening a setup portal. If it cannot connect, it creates an access point named `LD2450-Visualizer`; connect to it and the phone should offer to sign in to the network, which opens the visualizer. Otherwise open `http://192.168.4.1`. The visualizer page includes a `Wi-Fi setup` link that opens the WiFiManager configuration portal when needed.
+## Wi-Fi Visualizer 
 
-When connected to home Wi-Fi, use `http://ld2450.local` or the device IP address shown by your router.
+On startup, the device first tries saved home Wi-Fi credentials without opening a setup portal. If it cannot connect, it creates an access point named `LD2450-Visualizer`; connect to it and the phone should offer to sign in to the network, which opens the visualizer. Otherwise open `http://192.168.4.1`. The visualizer page includes a `Wi-Fi setup` link that opens the WiFi Setup. 
+After saving credentials the device restarts and joins that network; if it cannot connect, it falls back to the `LD2450-Visualizer` access point.
+
+When connected to home Wi-Fi, use `http://ld2450.local` or the device IP address shown by your router or the serial monitor.
 
 If Chrome on Android cannot open the page (for example `ERR_TOO_MANY_RETRIES`) while other browsers can, allow Chrome's `Nearby devices` permission in Android Settings > Apps > Chrome > Permissions. Recent Android versions block local network access without it.
 
 ## WLED control
 
-![Visualizer page](docs/wled-control.png)
+![WLED Control page](docs/wled-control.png)
 
 The `WLED Control` page (`http://ld2450.local/wled`) lets the sensor drive an LED strip on a separate WLED device running stock firmware, so a lit section of the strip follows people along a corridor.
 
@@ -50,11 +57,18 @@ The `WLED Control` page (`http://ld2450.local/wled`) lets the sensor drive an LE
 
 Frames are sent with WLED's realtime UDP protocol (DNRGB, port 21324) at up to 30 per second, and only when the picture changes. In WLED, `Receive UDP realtime` must be enabled under `Config > Sync Interfaces` (it is by default). Settings are stored in flash and survive a restart.
 
-Output looks like:
+## Serial log
+
+The serial monitor shows startup, Wi-Fi and web request messages, for example:
 
 ```text
-distance_m=1.247
+LD2450 boot, reset reason: External System
+Connected to HomeWifi, http://192.168.1.222 or http://ld2450.local
+Web server started
+HTTP GET / from 192.168.1.41
 ```
+
+A short burst of unreadable characters at power-up is the ESP8266 boot ROM, which always prints at 74880 baud.
 
 The sensor's default UART speed is 256000 baud. The sketch uses the D1 mini's hardware UART permanently on D7/D8. A separate transmit-only software serial channel sends log output through the normal USB serial TX pin, so the monitor remains at 115200 without interrupting sensor reception.
 
